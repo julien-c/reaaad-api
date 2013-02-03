@@ -7,6 +7,7 @@ require_once __DIR__.'/vendor/autoload.php';
 require_once __DIR__.'/config.php';
 
 $app = new Silex\Application();
+$app['debug'] = true;
 
 /***
  *
@@ -40,15 +41,24 @@ $app->get('/', function () use ($app) {
 });
 
 
-$app->get('/annotations', function () use ($app) {
+$app->get('/sentence', function (Request $request) use ($app) {
+	$component = $request->get('component');
+	$sentence = $request->get('sentence');
+	
 	$out = array();
 	
 	$m = new Mongo();
-	$c = $m->annotator->annotations->find();
+	$c = $m->reaaad->comments->find(array(
+		'component' => $component,
+		'sentence' => $sentence
+	));
 	
 	foreach($c as $post) {
 		$post['id'] = (string) $post['_id'];
 		unset($post['_id']);
+		
+		$post['user']['md5'] = md5(trim($post['user']['email']));
+		
 		$out[] = $post;
 	}
 	
@@ -56,11 +66,12 @@ $app->get('/annotations', function () use ($app) {
 });
 
 
-$app->post('/annotations', function () use ($app) {
+$app->post('/comments', function () use ($app) {
 	$post = $app['data'];
+	$post['time'] = new MongoDate();
 	
 	$m = new Mongo();
-	$m->annotator->annotations->insert($post, array('safe' => true));
+	$m->reaaad->comments->insert($post, array('safe' => true));
 	
 	$post['id'] = (string) $post['_id'];
 	unset($post['_id']);
@@ -69,64 +80,30 @@ $app->post('/annotations', function () use ($app) {
 });
 
 
-$app->get('/annotations/{id}', function ($id) use ($app) {
+$app->get('/component', function (Request $request) use ($app) {
+	$component = $request->get('component');
+	
+	$sentences = array();
 	
 	$m = new Mongo();
-	$post = $m->annotator->annotations->findOne(array('_id' => new MongoId($id)));
+	$c = $m->reaaad->comments->find(array(
+		'component' => $component
+	));
 	
-	$post['id'] = (string) $post['_id'];
-	unset($post['_id']);
+	foreach($c as $post) {
+		if (!isset($sentences[$post['sentence']])) {
+			$sentences[$post['sentence']] = 1;
+		}
+		else {
+			$sentences[$post['sentence']]++;
+		}
+	}
 	
-	return $app->json($post);
+	return $app->json($sentences);
 });
 
 
-$app->put('/annotations/{id}', function (Request $request, $id) use ($app) {
-	$post = $app['data'];
-	unset($post['id']);
-	
-	$m = new Mongo();
-	$m->annotator->annotations->update(
-		array('_id' => new MongoId($id)),
-		array('$set' => $post)
-	);
-	
-	return new Response('', 303, array('Location' => $request->getUri()));
-});
 
-
-$app->delete('/annotations/{id}', function (Request $request, $id) use ($app) {
-	
-	$m = new Mongo();
-	$m->annotator->annotations->remove(
-		array('_id' => new MongoId($id))
-	);
-	
-	return new Response('', 204);
-});
-
-
-/***
- *
- * Auth Endpoint.
- * @see https://github.com/okfn/annotator/wiki/Authentication
- *
- */
-
-
-$app->get('/auth/token', function () use ($app) {
-	$jwt = jwt::encode(
-		array(
-			'consumerKey' => CONSUMER_KEY,
-			'userId'      => USER_ID,
-			'issuedAt'    => time(),
-			'ttl'         => CONSUMER_TTL
-		), 
-		CONSUMER_SECRET
-	);
-	
-	return new Response($jwt);
-});
 
 
 /***
@@ -135,5 +112,5 @@ $app->get('/auth/token', function () use ($app) {
  *
  */
 
-$app['debug'] = true;
+
 $app->run();
